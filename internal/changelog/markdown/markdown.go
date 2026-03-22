@@ -11,6 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
+
 	"github.com/neatplatform/craft/ui"
 
 	"github.com/neatplatform/changelog/internal/changelog"
@@ -48,7 +51,7 @@ var (
 	h2Regex = regexp.MustCompile(`^## \[([0-9A-Za-z-.]+)\]\(([0-9A-Za-z-.:/]+)\) \((\d{4}-\d{2}-\d{2})\)$`)
 
 	funcMap = template.FuncMap{
-		"title": strings.Title, // nolint directives: sa1019
+		"title": cases.Title(language.English).String,
 		"time": func(t time.Time) string {
 			return t.Format(timeLayout)
 		},
@@ -103,13 +106,13 @@ func (p *processor) Parse(opts changelog.ParseOptions) (*changelog.Changelog, er
 
 	p.ui.Debugf(ui.Cyan, "Parsing %s ...", p.changelogFile)
 
-	content := ""
+	var b strings.Builder
 	chlog := new(changelog.Changelog)
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := scanner.Text()
-		content += fmt.Sprintln(line)
+		fmt.Fprintln(&b, line)
 
 		if sm := h1Regex.FindStringSubmatch(line); len(sm) == 2 {
 			chlog.Title = sm[1]
@@ -131,7 +134,7 @@ func (p *processor) Parse(opts changelog.ParseOptions) (*changelog.Changelog, er
 		return nil, err
 	}
 
-	p.content = content
+	p.content = b.String()
 
 	p.ui.Infof(ui.Green, "Successfully parsed %s", p.changelogFile)
 
@@ -143,7 +146,7 @@ func (p *processor) Render(chlog *changelog.Changelog) (string, error) {
 
 	// ==============================> RENDER THE CONTENT FOR NEW RELEASES <==============================
 
-	// All parameters are pre-defined and we do not expect an error here
+	// All parameters are pre-defined and we do not expect an error here.
 	tmpl, _ := template.New("changelog").Funcs(funcMap).Parse(changelogTemplate)
 
 	buf := new(bytes.Buffer)
@@ -155,7 +158,7 @@ func (p *processor) Render(chlog *changelog.Changelog) (string, error) {
 
 	// ==============================> UPDATE THE CHANGELOG FILE <==============================
 
-	f, err := os.OpenFile(p.changelogFile, os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(p.changelogFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		return "", err
 	}

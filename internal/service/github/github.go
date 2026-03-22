@@ -204,7 +204,7 @@ func (r *repo) FetchTags(ctx context.Context) (service.Tags, error) {
 	return tags, nil
 }
 
-// FetchFirstCommit retrieves the firist/initial commit.
+// FetchFirstCommit retrieves the first/initial commit.
 func (r *repo) FetchFirstCommit(ctx context.Context) (service.Commit, error) {
 	r.ui.Debugf(ui.Cyan, "Fetching the first GitHub commit ...")
 
@@ -225,8 +225,8 @@ func (r *repo) FetchFirstCommit(ctx context.Context) (service.Commit, error) {
 			c = commits[l-1]
 		}
 
-		// Fetch the last page if there more pages
-		// resp.Pages.Last == 0 is not a valid page number and causes the loop to exit
+		// Fetch the last page if there more pages.
+		// resp.Pages.Last == 0 is not a valid page number and causes the loop to exit.
 		p = resp.Pages.Last
 	}
 
@@ -331,7 +331,7 @@ func (r *repo) FetchIssuesAndMerges(ctx context.Context, since time.Time) (servi
 				return err
 			}
 
-			// Ensure the eevnt is not empty/zero
+			// Ensure the event is not empty/zero
 			// If it is empty/zero, the desired event has not been found
 			if e.CommitID != "" {
 				eventStore.Save(num, e)

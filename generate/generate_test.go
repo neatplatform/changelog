@@ -248,6 +248,16 @@ func TestNew(t *testing.T) {
 			ui:            ui.New(ui.Info),
 			expectedError: "",
 		},
+		{
+			name: "BitBucket",
+			s: spec.Spec{
+				Repo: spec.Repo{
+					Platform: "bitbucket.com",
+				},
+			},
+			ui:            ui.New(ui.Info),
+			expectedError: `unsupported repository platform: "bitbucket.com"`,
+		},
 	}
 
 	for _, tc := range tests {
@@ -1192,7 +1202,6 @@ func TestGenerator_resolveReleases(t *testing.T) {
 	tests := []struct {
 		name             string
 		g                *Generator
-		ctx              context.Context
 		s                spec.Spec
 		sortedTags       service.Tags
 		baseRev          string
@@ -1210,7 +1219,6 @@ func TestGenerator_resolveReleases(t *testing.T) {
 					},
 				},
 			},
-			ctx: context.Background(),
 			s: spec.Spec{
 				Issues: spec.Issues{
 					Grouping: spec.GroupingMilestone,
@@ -1262,7 +1270,6 @@ func TestGenerator_resolveReleases(t *testing.T) {
 					},
 				},
 			},
-			ctx: context.Background(),
 			s: spec.Spec{
 				Issues: spec.Issues{
 					Grouping:  spec.GroupingLabel,
@@ -1317,7 +1324,6 @@ func TestGenerator_resolveReleases(t *testing.T) {
 					},
 				},
 			},
-			ctx: context.Background(),
 			s: spec.Spec{
 				Issues: spec.Issues{
 					Grouping: spec.GroupingMilestone,
@@ -1391,7 +1397,6 @@ func TestGenerator_resolveReleases(t *testing.T) {
 					},
 				},
 			},
-			ctx: context.Background(),
 			s: spec.Spec{
 				Issues: spec.Issues{
 					Grouping:  spec.GroupingLabel,
@@ -1460,7 +1465,7 @@ func TestGenerator_resolveReleases(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			releases := tc.g.resolveReleases(tc.ctx, tc.s, tc.sortedTags, tc.baseRev, tc.issueMap, tc.mergeMap)
+			releases := tc.g.resolveReleases(tc.s, tc.sortedTags, tc.baseRev, tc.issueMap, tc.mergeMap)
 
 			assert.Equal(t, tc.expectedReleases, releases)
 		})

@@ -44,6 +44,9 @@ func New(s spec.Spec, u ui.UI) (*Generator, error) {
 
 	case spec.PlatformGitLab:
 		repo = gitlab.NewRepo(u, s.Repo.Path, s.Repo.AccessToken)
+
+	default:
+		return nil, fmt.Errorf("unsupported repository platform: %q", s.Repo.Platform)
 	}
 
 	return &Generator{
@@ -153,7 +156,7 @@ func (g *Generator) Generate(ctx context.Context, s spec.Spec) (string, error) {
 	mergeMap := resolveMergeMap(sortedMerges, commitMap, possibleFutureTag)
 	g.ui.Infof(ui.Green, "Partitioned issues and pull/merge requests by tag")
 
-	chlog.New = g.resolveReleases(ctx, s, newTags, baseRev, issueMap, mergeMap)
+	chlog.New = g.resolveReleases(s, newTags, baseRev, issueMap, mergeMap)
 	g.ui.Infof(ui.Green, "Grouped issues and pull/merge requests")
 
 	/* -------------------- UPDATE THE CHANGELOG -------------------- */
@@ -195,7 +198,7 @@ func (g *Generator) resolveTags(s spec.Tags, sortedTags service.Tags, chlog *cha
 	if from := s.From; from != "" {
 		i := newTags.Index(from)
 		if i == -1 {
-			return nil, fmt.Errorf("from-tag can be one of %s", newTags.Map(mapFunc))
+			return nil, fmt.Errorf("from-tag can be one of %v", newTags.Map(mapFunc))
 		}
 		// new tags are also sorted from the most recent to the least recent
 		newTags = newTags[:i+1]
@@ -205,7 +208,7 @@ func (g *Generator) resolveTags(s spec.Tags, sortedTags service.Tags, chlog *cha
 	if to := s.To; to != "" {
 		i := newTags.Index(to)
 		if i == -1 {
-			return nil, fmt.Errorf("to-tag can be one of %s", newTags.Map(mapFunc))
+			return nil, fmt.Errorf("to-tag can be one of %v", newTags.Map(mapFunc))
 		}
 		// new tags are also sorted from the most recent to the least recent
 		newTags = newTags[i:]
@@ -222,7 +225,7 @@ func (g *Generator) resolveTags(s spec.Tags, sortedTags service.Tags, chlog *cha
 		newTags = append(service.Tags{futureTag}, newTags...)
 	}
 
-	g.ui.Infof(ui.Green, "Resolved new tags for changelog: %s", newTags.Map(mapFunc))
+	g.ui.Infof(ui.Green, "Resolved new tags for changelog: %v", newTags.Map(mapFunc))
 
 	return newTags, nil
 }
@@ -274,7 +277,7 @@ func (g *Generator) resolveCommitMap(ctx context.Context, branch service.Branch,
 	return commitMap, nil
 }
 
-func (g *Generator) resolveReleases(ctx context.Context, s spec.Spec, sortedTags service.Tags, baseRev string, im issueMap, cm mergeMap) []changelog.Release {
+func (g *Generator) resolveReleases(s spec.Spec, sortedTags service.Tags, baseRev string, im issueMap, cm mergeMap) []changelog.Release {
 	releases := []changelog.Release{}
 
 	for i, tag := range sortedTags {

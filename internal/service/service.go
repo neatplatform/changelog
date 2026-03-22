@@ -358,6 +358,8 @@ func (i Issues) Milestones() []string {
 		milestones = append(milestones, milestone)
 	}
 
+	sort.Strings(milestones)
+
 	return milestones
 }
 
@@ -415,6 +417,8 @@ func (m Merges) Milestones() []string {
 	for milestone := range mp {
 		milestones = append(milestones, milestone)
 	}
+
+	sort.Strings(milestones)
 
 	return milestones
 }

@@ -14,6 +14,6 @@ jobs:
     permissions:
       contents: read
     with:
-      build_command: go build ./cmd/changelog
+      build_command: make build
     secrets:
       codecov_token: ${{ secrets.CODECOV_TOKEN }}

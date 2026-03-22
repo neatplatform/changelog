@@ -64,7 +64,7 @@ func (r *repo) FetchTags(ctx context.Context) (service.Tags, error) {
 	return service.Tags{}, nil
 }
 
-// FetchFirstCommit retrieves the firist/initial commit.
+// FetchFirstCommit retrieves the first/initial commit.
 func (r *repo) FetchFirstCommit(ctx context.Context) (service.Commit, error) {
 	return service.Commit{}, nil
 }

@@ -17,7 +17,7 @@ var specFiles = []string{"changelog.yml", "changelog.yaml"}
 
 const helpTemplate = `
   changelog is a simple command-line tool for generating changelogs based on issues and pull/merge requests.
-  It assumes the remote repository name is origin.
+  It expects one configured git remote repository.
 
   You can also have a changelog.yaml file in your repository for configuring how changelogs are generated.
   For more information, please see https://github.com/neatplatform/changelog
@@ -39,9 +39,9 @@ const helpTemplate = `
     -file                         The output file for the generated changelog (default: {{.General.File}})
     -base                         An optional file for appending the generated changelog to it {{if .General.Base}}(default: {{.General.Base}}){{end}}
                                   This option can only be used when generating the changelog for the first time
-    -print                        Print the generated changelong to STDOUT (default: {{.General.Print}})
+    -print                        Print the generated changelog to STDOUT (default: {{.General.Print}})
                                   If this option is enabled, all logs will be disabled
-    -verbose                      Show the vervbosity logs (default: {{.General.Verbose}})
+    -verbose                      Show the verbosity logs (default: {{.General.Verbose}})
 
     -from-tag                     Changelog will be generated for all changes after this tag (default: last tag on changelog)
     -to-tag                       Changelog will be generated for all changes before this tag (default: last git tag)
@@ -177,11 +177,11 @@ const (
 	SelectionNone = Selection("none")
 	// SelectionAll selects all changes.
 	SelectionAll = Selection("all")
-	// SelectionLabeled selects only those changes that have are labeled.
+	// SelectionLabeled selects only those changes that are labeled.
 	SelectionLabeled = Selection("labeled")
 )
 
-// Grouping determnies how changes are grouped together.
+// Grouping determines how changes are grouped together.
 type Grouping string
 
 const (
@@ -199,7 +199,7 @@ type LabelGroup struct {
 	Labels []string
 }
 
-// Issues has the specifications for fetching, flitering, and grouping issues.
+// Issues has the specifications for fetching, filtering, and grouping issues.
 type Issues struct {
 	Selection         Selection `yaml:"selection" flag:"issues-selection"`
 	IncludeLabels     []string  `yaml:"include-labels" flag:"issues-include-labels"`
@@ -278,7 +278,7 @@ func (i Issues) LabelGroups() []LabelGroup {
 	return groups
 }
 
-// Merges has the specifications for fetching, flitering, and grouping pull/merge requests.
+// Merges has the specifications for fetching, filtering, and grouping pull/merge requests.
 type Merges struct {
 	Selection         Selection `yaml:"selection" flag:"merges-selection"`
 	Branch            string    `yaml:"branch" flag:"merges-branch"`
@@ -380,7 +380,7 @@ type Spec struct {
 	Content Content `yaml:"content"`
 }
 
-// Default returns specfications with default values.
+// Default returns specifications with default values.
 // The default access token will be read from the CHANGELOG_ACCESS_TOKEN environment variable.
 func Default() Spec {
 	return Spec{
@@ -464,7 +464,7 @@ func (s Spec) FromFile() (Spec, error) {
 	return s, nil
 }
 
-// WithRepo sets Repo sepcs and returns a new spec object.
+// WithRepo sets Repo specs and returns a new spec object.
 func (s Spec) WithRepo(domain, path string) Spec {
 	// Leave s.Repo.AccessToken unchanged
 	s.Repo.Platform = Platform(domain)

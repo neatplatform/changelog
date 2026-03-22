@@ -312,7 +312,12 @@ func TestSpec_FromFile(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			orig := specFiles
 			specFiles = tc.specFiles
+			defer func() {
+				specFiles = orig
+			}()
+
 			spec, err := tc.spec.FromFile()
 
 			if tc.expectedError == "" {

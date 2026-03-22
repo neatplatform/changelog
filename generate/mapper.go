@@ -17,11 +17,11 @@ type revisions struct {
 type commitMap map[string]*revisions
 
 // issueMap is a map of tag names to issues.
-// It allows us to look up all issues for a tatg.
+// It allows us to look up all issues for a tag.
 type issueMap map[string]service.Issues
 
 // mergeMap is a map of tag names to issues.
-// It allows us to look up all merges for a tatg.
+// It allows us to look up all merges for a tag.
 type mergeMap map[string]service.Merges
 
 func filterByLabels(s spec.Spec, issues service.Issues, merges service.Merges) (service.Issues, service.Merges) {

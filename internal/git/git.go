@@ -14,8 +14,8 @@ var (
 	idPattern       = `[A-Za-z][0-9A-Za-z-]+[0-9A-Za-z]`
 	domainPattern   = fmt.Sprintf(`%s\.[A-Za-z]{2,63}`, idPattern)
 	repoPathPattern = fmt.Sprintf(`(%s/){1,20}(%s)`, idPattern, idPattern)
-	httpsPattern    = fmt.Sprintf(`^https://(%s)/(%s)(.git)?$`, domainPattern, repoPathPattern)
-	sshPattern      = fmt.Sprintf(`^git@(%s):(%s)(.git)?$`, domainPattern, repoPathPattern)
+	httpsPattern    = fmt.Sprintf(`^https://(%s)/(%s)(\.git)?$`, domainPattern, repoPathPattern)
+	sshPattern      = fmt.Sprintf(`^git@(%s):(%s)(\.git)?$`, domainPattern, repoPathPattern)
 	httpsRE         = regexp.MustCompile(httpsPattern)
 	sshRE           = regexp.MustCompile(sshPattern)
 )

@@ -4,11 +4,12 @@ go 1.25.0
 
 require (
 	github.com/fatih/color v1.19.0
-	github.com/go-git/go-git/v6 v6.0.0-20260320111621-ea91339c5263
+	github.com/go-git/go-git/v6 v6.0.0-20260322064825-e9e97138967c
 	github.com/neatplatform/craft v0.0.0-20260319052622-719153922aa8
 	github.com/neatplatform/go-github v0.0.0-20260321173032-1cb52db2632f
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/sync v0.20.0
+	golang.org/x/text v0.35.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
