@@ -1,0 +1,20 @@
+# IDE and OS-specific files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Test files
+*.test
+*.out
+*.html
+
+# Log files
+*.log
+
+# Compiled files
+/bin/
+/build/
+/dist/
+/main
+/changelog

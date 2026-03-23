@@ -1,0 +1,470 @@
+// Package service provides functionality for retrieving data from GitHub.
+package github
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"golang.org/x/sync/errgroup"
+
+	"github.com/neatplatform/craft/ui"
+	"github.com/neatplatform/go-github"
+
+	"github.com/neatplatform/changelog/internal/service"
+)
+
+const pageSize = 100
+
+type (
+	githubService interface {
+		EnsureScopes(context.Context, ...github.Scope) error
+	}
+
+	usersService interface {
+		Get(context.Context, string) (*github.User, *github.Response, error)
+	}
+
+	repoService interface {
+		Get(context.Context) (*github.Repository, *github.Response, error)
+		Commit(context.Context, string) (*github.Commit, *github.Response, error)
+		Commits(context.Context, int, int) ([]github.Commit, *github.Response, error)
+		Branch(context.Context, string) (*github.Branch, *github.Response, error)
+		Tags(context.Context, int, int) ([]github.Tag, *github.Response, error)
+	}
+
+	issueService interface {
+		List(context.Context, int, int, github.IssuesFilter) ([]github.Issue, *github.Response, error)
+		Events(context.Context, int, int, int) ([]github.Event, *github.Response, error)
+	}
+)
+
+// repo implements the service.Repo interface for GitHub.
+type repo struct {
+	ui     ui.UI
+	owner  string
+	repo   string
+	stores struct {
+		users   *store
+		commits *store
+	}
+	services struct {
+		github githubService
+		users  usersService
+		repo   repoService
+		issues issueService
+	}
+}
+
+// NewRepo creates a new GitHub repository.
+func NewRepo(ui ui.UI, ownerName, repoName, accessToken string) service.Repo {
+	client := github.NewClient(accessToken)
+	repoService := client.Repo(ownerName, repoName)
+
+	r := &repo{
+		ui:    ui,
+		owner: ownerName,
+		repo:  repoName,
+	}
+
+	r.stores.users = newStore()
+	r.stores.commits = newStore()
+	r.services.github = client
+	r.services.users = client.Users
+	r.services.repo = repoService
+	r.services.issues = repoService.Issues
+
+	return r
+}
+
+// FutureTag returns a tag that does not exist yet.
+func (r *repo) FutureTag(name string) service.Tag {
+	return service.Tag{
+		Name:   name,
+		Time:   time.Now(),
+		WebURL: fmt.Sprintf("https://github.com/%s/%s/tree/%s", r.owner, r.repo, name),
+	}
+}
+
+// CompareURL returns a URL for comparing two revisions.
+func (r *repo) CompareURL(base, head string) string {
+	return fmt.Sprintf("https://github.com/%s/%s/compare/%s...%s", r.owner, r.repo, base, head)
+}
+
+// EnsurePermissions ensures the client has all the required permissions.
+func (r *repo) EnsurePermissions(ctx context.Context) error {
+	if err := r.services.github.EnsureScopes(ctx, github.ScopeRepo); err != nil {
+		return err
+	}
+
+	r.ui.Debugf(ui.Cyan, "GitHub token scopes verified: %s", github.ScopeRepo)
+
+	return nil
+}
+
+// FetchDefaultBranch retrieves the default branch.
+func (r *repo) FetchDefaultBranch(ctx context.Context) (service.Branch, error) {
+	rp, _, err := r.services.repo.Get(ctx)
+	if err != nil {
+		return service.Branch{}, err
+	}
+
+	b, _, err := r.services.repo.Branch(ctx, rp.DefaultBranch)
+	if err != nil {
+		return service.Branch{}, err
+	}
+
+	branch := toBranch(*b)
+
+	r.ui.Debugf(ui.Cyan, "Fetched GitHub default branch: %s", b.Name)
+
+	return branch, nil
+}
+
+// FetchBranch retrieves a branch by name.
+func (r *repo) FetchBranch(ctx context.Context, name string) (service.Branch, error) {
+	b, _, err := r.services.repo.Branch(ctx, name)
+	if err != nil {
+		return service.Branch{}, err
+	}
+
+	branch := toBranch(*b)
+
+	r.ui.Debugf(ui.Cyan, "Fetched GitHub branch: %s", name)
+
+	return branch, nil
+}
+
+// FetchTags retrieves all tags.
+func (r *repo) FetchTags(ctx context.Context) (service.Tags, error) {
+	r.ui.Debugf(ui.Cyan, "Fetching GitHub tags ...")
+
+	// ==============================> FETCH TAGS <==============================
+
+	tagStore := newStore()
+
+	// Fetch tags
+	r.ui.Debugf(ui.Cyan, "Fetched GitHub tags page 1 ...")
+	gitHubTags, resp, err := r.services.repo.Tags(ctx, pageSize, 1)
+	if err != nil {
+		return nil, err
+	}
+	for _, t := range gitHubTags {
+		tagStore.Save(t.Name, t)
+	}
+
+	g1, ctx1 := errgroup.WithContext(ctx)
+
+	// Fetch more tags if any
+	for p := 2; p <= resp.Pages.Last; p++ {
+		p := p // https://golang.org/doc/faq#closures_and_goroutines
+		g1.Go(func() error {
+			r.ui.Debugf(ui.Cyan, "Fetched GitHub tags page %d ...", p)
+			gitHubTags, _, err := r.services.repo.Tags(ctx1, pageSize, p)
+			if err != nil {
+				return err
+			}
+			for _, t := range gitHubTags {
+				tagStore.Save(t.Name, t)
+			}
+			return nil
+		})
+	}
+
+	if err := g1.Wait(); err != nil {
+		return nil, err
+	}
+
+	// ==============================> FETCH TAG COMMITS <==============================
+
+	r.ui.Debugf(ui.Cyan, "Fetching GitHub commits for tags ...")
+
+	g2, ctx2 := errgroup.WithContext(ctx)
+
+	// Fetch commits for tags
+	_ = tagStore.ForEach(func(_, v interface{}) error {
+		g2.Go(func() error {
+			tag := v.(github.Tag)
+			_, err := r.getCommit(ctx2, tag.Commit.SHA)
+			return err
+		})
+		return nil
+	})
+
+	if err := g2.Wait(); err != nil {
+		return nil, err
+	}
+
+	// ==============================> JOINING TAGS & COMMITS <==============================
+
+	tags := resolveTags(tagStore, r.stores.commits, r.owner, r.repo)
+
+	r.ui.Debugf(ui.Cyan, "GitHub tags are fetched: %d", len(tags))
+
+	return tags, nil
+}
+
+// FetchFirstCommit retrieves the first/initial commit.
+func (r *repo) FetchFirstCommit(ctx context.Context) (service.Commit, error) {
+	r.ui.Debugf(ui.Cyan, "Fetching the first GitHub commit ...")
+
+	var c github.Commit
+
+	for p := 1; p > 0; {
+		commits, resp, err := r.services.repo.Commits(ctx, pageSize, p)
+		if err != nil {
+			return service.Commit{}, err
+		}
+
+		// Add commits to commit store
+		for _, c := range commits {
+			r.stores.commits.Save(c.SHA, c)
+		}
+
+		if l := len(commits); l > 0 {
+			c = commits[l-1]
+		}
+
+		// Fetch the last page if there more pages.
+		// resp.Pages.Last == 0 is not a valid page number and causes the loop to exit.
+		p = resp.Pages.Last
+	}
+
+	commit := toCommit(c)
+
+	r.ui.Debugf(ui.Cyan, "Fetched the first GitHub commit: %s", commit)
+
+	return commit, nil
+}
+
+// FetchParentCommits retrieves all parent commits of a given commit hash.
+func (r *repo) FetchParentCommits(ctx context.Context, ref string) (service.Commits, error) {
+	r.ui.Debugf(ui.Cyan, "Fetching all GitHub parent commits for %s ...", ref)
+
+	commits := service.Commits{}
+	if err := r.getParentCommits(ctx, &commits, ref); err != nil {
+		return nil, err
+	}
+
+	r.ui.Debugf(ui.Cyan, "All GitHub parent commits for %s are fetched", ref)
+
+	return commits, nil
+}
+
+// FetchIssuesAndMerges retrieves all closed issues and merged pull requests.
+func (r *repo) FetchIssuesAndMerges(ctx context.Context, since time.Time) (service.Issues, service.Merges, error) {
+	if since.IsZero() {
+		r.ui.Infof(ui.Green, "Fetching GitHub issues since the beginning ...")
+	} else {
+		r.ui.Infof(ui.Green, "Fetching GitHub issues since %s ...", since.Format(time.RFC3339))
+	}
+
+	// ==============================> FETCH ISSUES <==============================
+
+	issueStore := newStore()
+	filter := github.IssuesFilter{
+		State: "closed",
+		Since: since,
+	}
+
+	// Fetch closed issues
+	r.ui.Debugf(ui.Cyan, "Fetched GitHub issues page 1 ...")
+	gitHubIssues, resp, err := r.services.issues.List(ctx, pageSize, 1, filter)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, i := range gitHubIssues {
+		issueStore.Save(i.Number, i)
+	}
+
+	g1, ctx1 := errgroup.WithContext(ctx)
+
+	// Fetch more closed issues if any
+	for p := 2; p <= resp.Pages.Last; p++ {
+		p := p // https://golang.org/doc/faq#closures_and_goroutines
+		g1.Go(func() error {
+			r.ui.Debugf(ui.Cyan, "Fetched GitHub issues page %d ...", p)
+			gitHubIssues, _, err := r.services.issues.List(ctx1, pageSize, p, filter)
+			if err != nil {
+				return err
+			}
+			for _, i := range gitHubIssues {
+				issueStore.Save(i.Number, i)
+			}
+			return nil
+		})
+	}
+
+	if err := g1.Wait(); err != nil {
+		return nil, nil, err
+	}
+
+	r.ui.Debugf(ui.Cyan, "Fetched GitHub issues: %d", issueStore.Len())
+
+	// ==============================> FETCH EVENTS & COMMITS <==============================
+
+	r.ui.Debugf(ui.Cyan, "Fetching GitHub events and commits for issues and pull requests ...")
+
+	eventStore := newStore()
+
+	g2, ctx2 := errgroup.WithContext(ctx)
+
+	// Fetch and search events
+	_ = issueStore.ForEach(func(k, v interface{}) error {
+		num := k.(int)
+		issue := v.(github.Issue)
+
+		g2.Go(func() error {
+			// Issue
+			if issue.PullURLs == nil {
+				e, err := r.findEvent(ctx2, num, "closed")
+				if err != nil {
+					return err
+				}
+				eventStore.Save(num, e)
+				return nil
+			}
+
+			// Pull Request
+			e, err := r.findEvent(ctx2, num, "merged")
+			if err != nil {
+				return err
+			}
+
+			// Ensure the event is not empty/zero
+			// If it is empty/zero, the desired event has not been found
+			if e.CommitID != "" {
+				eventStore.Save(num, e)
+				if _, err := r.getCommit(ctx2, e.CommitID); err != nil {
+					return err
+				}
+			}
+
+			return nil
+		})
+
+		return nil
+	})
+
+	if err := g2.Wait(); err != nil {
+		return nil, nil, err
+	}
+
+	// ==============================> FETCH USERS <==============================
+
+	r.ui.Debugf(ui.Cyan, "Fetching GitHub users for issues and pull requests ...")
+
+	// Fetch author users for issues and pull requests
+	err = issueStore.ForEach(func(k, v interface{}) error {
+		num := k.(int)
+		issue := v.(github.Issue)
+
+		// Only fetch the user of the issue is closed or the pull request is merged
+		if _, ok := eventStore.Load(num); ok {
+			_, err := r.getUser(ctx, issue.User.Login)
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Fetch closer/merger users
+	err = eventStore.ForEach(func(k, v interface{}) error {
+		e := v.(github.Event)
+		_, err := r.getUser(ctx, e.Actor.Login)
+		return err
+	})
+
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// ==============================> JOINING ISSUES, PULLS, EVENTS, COMMITS, & USERS <==============================
+
+	issues, merges := resolveIssuesAndMerges(issueStore, eventStore, r.stores.commits, r.stores.users)
+
+	r.ui.Debugf(ui.Cyan, "Resolved and sorted GitHub issues (%d) and pull requests (%d)", len(issues), len(merges))
+	r.ui.Infof(ui.Green, "All GitHub issues (%d) and pull requests (%d) are fetched", len(issues), len(merges))
+
+	return issues, merges, nil
+}
+
+func (r *repo) getUser(ctx context.Context, username string) (github.User, error) {
+	// First, check the cache
+	if v, ok := r.stores.users.Load(username); ok {
+		u := v.(github.User)
+		return u, nil
+	}
+
+	u, _, err := r.services.users.Get(ctx, username)
+	if err != nil {
+		return github.User{}, err
+	}
+
+	// Update the cache
+	r.stores.users.Save(u.Login, *u)
+
+	return *u, nil
+}
+
+func (r *repo) getCommit(ctx context.Context, ref string) (github.Commit, error) {
+	// First, check the cache
+	if v, ok := r.stores.commits.Load(ref); ok {
+		c := v.(github.Commit)
+		return c, nil
+	}
+
+	c, _, err := r.services.repo.Commit(ctx, ref)
+	if err != nil {
+		return github.Commit{}, err
+	}
+
+	// Update the cache
+	r.stores.commits.Save(c.SHA, *c)
+
+	return *c, nil
+}
+
+func (r *repo) getParentCommits(ctx context.Context, commits *service.Commits, ref string) error {
+	c, err := r.getCommit(ctx, ref)
+	if err != nil {
+		return err
+	}
+
+	*commits = append(*commits, toCommit(c))
+
+	for _, parent := range c.Parents {
+		if sha := parent.SHA; !commits.Any(sha) {
+			if err := r.getParentCommits(ctx, commits, sha); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (r *repo) findEvent(ctx context.Context, num int, name string) (github.Event, error) {
+	for p := 1; p > 0; {
+		events, resp, err := r.services.issues.Events(ctx, num, pageSize, p)
+		if err != nil {
+			return github.Event{}, err
+		}
+
+		for _, e := range events {
+			if e.Event == name {
+				r.ui.Debugf(ui.Cyan, "Found %s event for issue %d", name, num)
+				return e, nil
+			}
+		}
+
+		// resp.Pages.Next == 0 is not a valid page number and causes the loop to exit
+		p = resp.Pages.Next
+	}
+
+	return github.Event{}, nil
+}
