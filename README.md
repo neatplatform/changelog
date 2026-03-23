@@ -210,8 +210,6 @@ When you run *changelog* inside a Git directory, the following steps occur:
   8. Pull requests are organized using the `grouping` option (label, milestone, or simple).
   9. The changelog is generated and written to the output file.
 
-## Resources
-
 
 [godoc-url]: https://pkg.go.dev/github.com/neatplatform/changelog
 [godoc-image]: https://pkg.go.dev/badge/github.com/neatplatform/changelog
