@@ -210,6 +210,18 @@ When you run *changelog* inside a Git directory, the following steps occur:
   8. Pull requests are organized using the `grouping` option (label, milestone, or simple).
   9. The changelog is generated and written to the output file.
 
+## CI Checks
+
+CI checks run on `pull_request` and `merge_queue` events, but only when the target branch is `main`.
+
+**Why not on push to main?**
+
+This repo uses merge queue, so all PRs land on `main` through the queue — running checks at that point would be redundant.
+
+**Why not on other branches?**
+
+Branches not targeting `main` skip CI checks entirely to reduce unnecessary runner usage.
+
 
 [godoc-url]: https://pkg.go.dev/github.com/neatplatform/changelog
 [godoc-image]: https://pkg.go.dev/badge/github.com/neatplatform/changelog
